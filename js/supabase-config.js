@@ -1,7 +1,7 @@
 // ============================================================
 // حط بيانات مشروع Supabase بتاعك هنا (Project Settings > API)
 // ============================================================
-const SUPABASE_URL = "https://kiwtoolwyanqrxpkwxhs.supabase.co/rest/v1/";       // مثال: https://xxxxx.supabase.co
+const SUPABASE_URL = "https://kiwtoolwyanqrxpkwxhs.supabase.co";       // مثال: https://xxxxx.supabase.co
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpd3Rvb2x3eWFucXJ4cGt3eGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxOTcwMjUsImV4cCI6MjEwNTc3MzAyNX0.8HJ-n-7Zyf_Kns3nDYu9taaRY_nBZCd1ho1O5scWqTE";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
