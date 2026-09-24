@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة الصدارة — أكاديمية مستر هاني</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="mark">هـ</span> أكاديمية مستر هاني</div>
+  <a href="dashboard.html" class="pill">← رجوع لخطتي</a>
+</div>
+
+<div class="wrap">
+  <h1>🏆 لوحة الصدارة</h1>
+  <p class="muted" style="margin-bottom:20px;">أكتر الطلاب تفاعلاً ومشاهدة في فصلك</p>
+  <div class="glass card" id="board">
+    <p class="muted">جاري التحميل...</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script>
+const student = requireSession();
+
+async function loadBoard() {
+  const { data } = await supabaseClient
+    .from("students")
+    .select("full_name, total_points")
+    .eq("class_id", student.class_id)
+    .order("total_points", { ascending: false })
+    .limit(30);
+
+  const board = document.getElementById("board");
+  if (!data || data.length === 0) {
+    board.innerHTML = '<p class="muted">لسه مفيش بيانات كفاية</p>';
+    return;
+  }
+
+  board.innerHTML = data.map((s, i) => {
+    const rankClass = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1);
+    return `
+      <div class="leader-row">
+        <div class="rank ${rankClass}">${medal}</div>
+        <div style="flex:1;">${s.full_name}</div>
+        <div style="font-weight:900; color:var(--gold);">${s.total_points || 0}</div>
+      </div>`;
+  }).join("");
+}
+
+loadBoard();
+
+// تحديث لحظي عند تغيّر نقاط أي طالب
+supabaseClient
+  .channel("leaderboard-changes")
+  .on("postgres_changes", { event: "UPDATE", schema: "public", table: "students" }, loadBoard)
+  .subscribe();
+</script>
+</body>
+</html>

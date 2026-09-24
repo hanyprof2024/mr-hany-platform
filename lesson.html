@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الحصة — أكاديمية مستر هاني</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="mark">هـ</span> أكاديمية مستر هاني</div>
+  <a href="dashboard.html" class="pill">← رجوع لخطتي</a>
+</div>
+
+<div class="wrap">
+  <h1 id="lessonTitle">جاري التحميل...</h1>
+  <p class="muted" id="lessonHint" style="margin-bottom:16px;">الفيديو هيتوقف تلقائي عند كل سؤال — جاوب صح عشان تكمل.</p>
+
+  <div class="video-wrap glass">
+    <div id="ytPlayer"></div>
+    <div class="overlay hidden" id="quizOverlay">
+      <div style="max-width:420px; width:100%;">
+        <p class="pill" id="qPoints">+10 نقطة</p>
+        <h2 id="qPrompt" style="margin:10px 0 16px;">—</h2>
+        <div id="qChoices"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass card" id="readingCard" style="display:none; margin-top:18px;">
+    <h2>📖 القراءة المصاحبة</h2>
+    <p class="muted">راجع المادة المكتوبة الخاصة بالدرس ده لترسيخ المعلومة</p>
+    <a id="readingLink" href="#" target="_blank" class="btn btn-ghost" style="margin-top:10px;">افتح القراءة</a>
+  </div>
+
+  <div class="glass card" style="margin-top:18px;">
+    <h2>❤️ عايز تدعمنا؟</h2>
+    <p class="muted">شوية خطوات بسيطة على القناة بتساعدنا نكمل نقدملكم شرح مجاني، وكل واحدة فيها ياخدلك نقاط إضافية.</p>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border);">
+      <label>
+        <input type="checkbox" id="likeCheck" style="width:auto; display:inline-block; margin-inline-end:8px;">
+        عملت لايك وكتبت كومنت على الفيديو ✅
+      </label>
+      <button class="btn btn-primary" id="claimLikeBonus" style="margin-top:10px;" disabled>استلم +15 نقطة</button>
+    </div>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border);">
+      <label>
+        <input type="checkbox" id="subCheck" style="width:auto; display:inline-block; margin-inline-end:8px;">
+        مشترك في القناة وفعّلت جرس التنبيهات 🔔
+      </label>
+      <button class="btn btn-primary" id="claimSubBonus" style="margin-top:10px;" disabled>استلم +10 نقطة</button>
+    </div>
+
+    <p class="muted" style="margin-top:12px; font-size:12px;">نظام أمانة — إحنا بنثق فيك، وقيّمك الحقيقي بيبان في مستواك ومناقشتك 🙂</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" style="display:none;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+const student = requireSession();
+const params = new URLSearchParams(window.location.search);
+const lessonId = params.get("id");
+
+let player, lesson, questions = [], answeredIds = new Set(), pendingQuestion = null;
+
+async function init() {
+  const { data: lessonData } = await supabaseClient
+    .from("lessons").select("*").eq("id", lessonId).maybeSingle();
+
+  if (!lessonData) { document.getElementById("lessonTitle").textContent = "الدرس غير موجود"; return; }
+  lesson = lessonData;
+  document.getElementById("lessonTitle").textContent = lesson.title;
+
+  if (lesson.reading_url) {
+    document.getElementById("readingCard").style.display = "block";
+    document.getElementById("readingLink").href = lesson.reading_url;
+  }
+
+  const { data: qData } = await supabaseClient
+    .from("questions").select("*").eq("lesson_id", lessonId).order("trigger_second");
+  questions = qData || [];
+
+  const { data: attempts } = await supabaseClient
+    .from("attempts").select("question_id").eq("student_id", student.id)
+    .in("question_id", questions.map(q => q.id));
+  (attempts || []).forEach(a => answeredIds.add(a.question_id));
+
+  await loadProgress();
+  loadYTPlayer();
+}
+
+async function loadProgress() {
+  const { data: prog } = await supabaseClient
+    .from("lesson_progress").select("*")
+    .eq("student_id", student.id).eq("lesson_id", lessonId).maybeSingle();
+
+  if (!prog) return;
+
+  if (prog.like_bonus_awarded) markClaimed("claimLikeBonus", "likeCheck");
+  if (prog.subscribe_bonus_awarded) markClaimed("claimSubBonus", "subCheck");
+}
+
+function markClaimed(btnId, checkId) {
+  document.getElementById(checkId).checked = true;
+  document.getElementById(checkId).disabled = true;
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  btn.textContent = "تم الاستلام ✓";
+}
+
+function loadYTPlayer() {
+  if (window.YT && window.YT.Player) { createPlayer(); }
+  else { window.onYouTubeIframeAPIReady = createPlayer; }
+}
+
+function createPlayer() {
+  player = new YT.Player("ytPlayer", {
+    videoId: lesson.youtube_video_id,
+    playerVars: { rel: 0, modestbranding: 1 },
+    events: {
+      onReady: () => setInterval(checkTime, 500)
+    }
+  });
+}
+
+function checkTime() {
+  if (!player || !player.getCurrentTime || pendingQuestion) return;
+  const t = Math.floor(player.getCurrentTime());
+  const next = questions.find(q => !answeredIds.has(q.id) && t >= q.trigger_second);
+  if (next) showQuestion(next);
+}
+
+function showQuestion(q) {
+  pendingQuestion = q;
+  player.pauseVideo();
+  document.getElementById("qPoints").textContent = `+${q.points} نقطة`;
+  document.getElementById("qPrompt").textContent = q.prompt;
+  const choicesEl = document.getElementById("qChoices");
+  choicesEl.innerHTML = "";
+  q.choices.forEach((choice, idx) => {
+    const btn = document.createElement("button");
+    btn.className = "choice";
+    btn.textContent = choice;
+    btn.onclick = () => submitAnswer(q, idx, btn);
+    choicesEl.appendChild(btn);
+  });
+  document.getElementById("quizOverlay").classList.remove("hidden");
+}
+
+async function submitAnswer(q, idx, btnEl) {
+  const isCorrect = idx === q.correct_index;
+  const allButtons = document.querySelectorAll("#qChoices .choice");
+  allButtons.forEach(b => b.onclick = null);
+  btnEl.classList.add(isCorrect ? "correct" : "wrong");
+  if (!isCorrect) allButtons[q.correct_index].classList.add("correct");
+
+  await supabaseClient.from("attempts").insert({
+    student_id: student.id, question_id: q.id, chosen_index: idx, is_correct: isCorrect
+  });
+
+  if (isCorrect) await addPoints(q.points);
+  answeredIds.add(q.id);
+
+  setTimeout(() => {
+    document.getElementById("quizOverlay").classList.add("hidden");
+    pendingQuestion = null;
+    player.playVideo();
+  }, 1400);
+}
+
+async function addPoints(amount) {
+  const newTotal = (student.total_points || 0) + amount;
+  student.total_points = newTotal;
+  saveSession(student);
+  document.getElementById("pointsVal") && (document.getElementById("pointsVal").textContent = newTotal);
+  await supabaseClient.from("students").update({ total_points: newTotal }).eq("id", student.id);
+  showToast(`🎉 +${amount} نقطة!`);
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 2000);
+}
+
+document.getElementById("likeCheck").addEventListener("change", (e) => {
+  document.getElementById("claimLikeBonus").disabled = !e.target.checked;
+});
+document.getElementById("subCheck").addEventListener("change", (e) => {
+  document.getElementById("claimSubBonus").disabled = !e.target.checked;
+});
+
+document.getElementById("claimLikeBonus").addEventListener("click", async () => {
+  markClaimed("claimLikeBonus", "likeCheck");
+  await supabaseClient.from("lesson_progress").upsert({
+    student_id: student.id, lesson_id: lessonId, liked_commented: true, like_bonus_awarded: true, completed: true
+  }, { onConflict: "student_id,lesson_id" });
+  await addPoints(15);
+});
+
+document.getElementById("claimSubBonus").addEventListener("click", async () => {
+  markClaimed("claimSubBonus", "subCheck");
+  await supabaseClient.from("lesson_progress").upsert({
+    student_id: student.id, lesson_id: lessonId, subscribed_bell: true, subscribe_bonus_awarded: true, completed: true
+  }, { onConflict: "student_id,lesson_id" });
+  await addPoints(10);
+});
+
+init();
+</script>
+</body>
+</html>
