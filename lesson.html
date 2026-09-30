@@ -28,6 +28,22 @@
     </div>
   </div>
 
+  <div class="glass card" style="margin-top:12px; padding:14px 18px;">
+    <div class="row" style="gap:14px;">
+      <button class="btn btn-ghost" id="playPauseBtn" style="padding:10px 16px; font-size:18px;">▶️</button>
+      <div style="flex:1;">
+        <div id="progressTrack" style="position:relative; height:10px; border-radius:6px; background:rgba(255,255,255,0.08); cursor:pointer; overflow:hidden;">
+          <div id="progressFill" style="position:absolute; inset:0; width:0%; background:linear-gradient(90deg, var(--gold), var(--teal)); border-radius:6px;"></div>
+        </div>
+        <div class="row between" style="margin-top:6px;">
+          <span class="muted" id="timeLabel" style="font-size:12px;">00:00 / 00:00</span>
+          <span class="muted" id="watchStatus" style="font-size:12px;">لسه ماخلصتش المشاهدة</span>
+        </div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px; margin-top:10px;">🔒 مينفعش تقدّم الفيديو — بس تقدر ترجعله وتعيد أي جزء فاتك براحتك.</p>
+  </div>
+
   <div class="glass card" id="readingCard" style="display:none; margin-top:18px;">
     <h2>📖 القراءة المصاحبة</h2>
     <p class="muted">راجع المادة المكتوبة الخاصة بالدرس ده لترسيخ المعلومة</p>
@@ -69,6 +85,9 @@ const params = new URLSearchParams(window.location.search);
 const lessonId = params.get("id");
 
 let player, lesson, questions = [], answeredIds = new Set(), pendingQuestion = null;
+let maxWatchedSecond = 0, videoDuration = 0, isSeeking = false, completingLock = false;
+let watchBonusPoints = 20, repeatWatchPoints = 5, dailyWatchCap = 3;
+let watchCount = 0, watchesToday = 0, lastWatchDate = null;
 
 async function init() {
   const { data: lessonData } = await supabaseClient
@@ -92,6 +111,14 @@ async function init() {
     .in("question_id", questions.map(q => q.id));
   (attempts || []).forEach(a => answeredIds.add(a.question_id));
 
+  const { data: settings } = await supabaseClient
+    .from("app_settings").select("watch_bonus_points, repeat_watch_points, daily_watch_cap").eq("id", 1).maybeSingle();
+  if (settings) {
+    watchBonusPoints = settings.watch_bonus_points;
+    repeatWatchPoints = settings.repeat_watch_points;
+    dailyWatchCap = settings.daily_watch_cap;
+  }
+
   await loadProgress();
   loadYTPlayer();
 }
@@ -103,8 +130,24 @@ async function loadProgress() {
 
   if (!prog) return;
 
+  // ملحوظة: مش بنسترجع max_watched_second كنقطة بداية للجلسة عمدًا — كل جلسة مشاهدة
+  // جديدة لازم تتفرج من الأول لحد الآخر عشان تحتسب كمشاهدة كاملة تانية (ساعات مشاهدة حقيقية).
+  watchCount = prog.watch_count || 0;
+  watchesToday = prog.watches_today || 0;
+  lastWatchDate = prog.last_watch_date || null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastWatchDate !== today) watchesToday = 0;
+
+  if (prog.completed) updateWatchStatusUI();
   if (prog.like_bonus_awarded) markClaimed("claimLikeBonus", "likeCheck");
   if (prog.subscribe_bonus_awarded) markClaimed("claimSubBonus", "subCheck");
+}
+
+function updateWatchStatusUI() {
+  const el = document.getElementById("watchStatus");
+  el.style.color = "var(--teal)";
+  el.textContent = watchCount > 0 ? `✅ اتفرجت ${watchCount} مرة` : "";
 }
 
 function markClaimed(btnId, checkId) {
@@ -123,19 +166,123 @@ function loadYTPlayer() {
 function createPlayer() {
   player = new YT.Player("ytPlayer", {
     videoId: lesson.youtube_video_id,
-    playerVars: { rel: 0, modestbranding: 1 },
+    playerVars: { rel: 0, modestbranding: 1, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3 },
     events: {
-      onReady: () => setInterval(checkTime, 500)
+      onReady: (e) => {
+        videoDuration = e.target.getDuration();
+        setInterval(checkTime, 500);
+      },
+      onStateChange: onPlayerStateChange
     }
   });
 }
 
+function onPlayerStateChange(e) {
+  document.getElementById("playPauseBtn").textContent = (e.data === YT.PlayerState.PLAYING) ? "⏸️" : "▶️";
+  if (e.data === YT.PlayerState.ENDED) onVideoFullyWatched();
+}
+
+const SKIP_TOLERANCE = 2; // ثانية سماحية لفارق التوقيت الطبيعي
+
 function checkTime() {
-  if (!player || !player.getCurrentTime || pendingQuestion) return;
-  const t = Math.floor(player.getCurrentTime());
-  const next = questions.find(q => !answeredIds.has(q.id) && t >= q.trigger_second);
+  if (!player || !player.getCurrentTime || isSeeking || completingLock) return;
+  const t = player.getCurrentTime();
+
+  // منع التقديم: لو وصل لثانية أبعد من أبعد نقطة شاهدها فعليًا في الجلسة دي بفارق غير طبيعي، ارجعه
+  if (t > maxWatchedSecond + SKIP_TOLERANCE) {
+    player.seekTo(maxWatchedSecond, true);
+    showToast("🔒 مينفعش تقدّم الفيديو");
+    return;
+  }
+  if (t > maxWatchedSecond) {
+    maxWatchedSecond = t;
+  }
+
+  updateProgressUI(t);
+
+  if (videoDuration && t >= videoDuration - 1) { onVideoFullyWatched(); return; }
+
+  if (pendingQuestion) return;
+  const tSec = Math.floor(t);
+  const next = questions.find(q => !answeredIds.has(q.id) && tSec >= q.trigger_second);
   if (next) showQuestion(next);
 }
+
+function updateProgressUI(t) {
+  const dur = videoDuration || 1;
+  document.getElementById("progressFill").style.width = Math.min(100, (t / dur) * 100) + "%";
+  document.getElementById("timeLabel").textContent = fmtTime(t) + " / " + fmtTime(dur);
+}
+
+function fmtTime(s) {
+  s = Math.floor(s || 0);
+  const m = Math.floor(s / 60), sec = s % 60;
+  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+}
+
+async function onVideoFullyWatched() {
+  if (completingLock) return;
+  completingLock = true;
+  player.pauseVideo();
+
+  const wasFirstWatchEver = watchCount === 0;
+  watchCount += 1;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastWatchDate !== today) { watchesToday = 0; lastWatchDate = today; }
+
+  let pointsAwarded = 0;
+  let capped = false;
+  if (watchesToday < dailyWatchCap) {
+    pointsAwarded = wasFirstWatchEver ? watchBonusPoints : repeatWatchPoints;
+    watchesToday += 1;
+  } else {
+    capped = true;
+  }
+
+  await supabaseClient.from("lesson_progress").upsert({
+    student_id: student.id, lesson_id: lessonId,
+    completed: true, watch_count: watchCount,
+    watches_today: watchesToday, last_watch_date: lastWatchDate
+  }, { onConflict: "student_id,lesson_id" });
+
+  updateWatchStatusUI();
+
+  if (pointsAwarded > 0) {
+    await addPoints(pointsAwarded);
+    showToast(`🎉 مشاهدة كاملة (${watchesToday}/${dailyWatchCap} النهاردة)! +${pointsAwarded} نقطة`);
+  } else if (capped) {
+    showToast("💪 برافو عليك! وصلت للحد الأقصى من نقاط إعادة المشاهدة النهاردة");
+  }
+
+  // اسمح بإعادة المشاهدة فورًا من الأول (وتحتسب نقط جديدة لو فاضل من الكوتا اليومية)
+  isSeeking = true;
+  maxWatchedSecond = 0;
+  player.seekTo(0, true);
+  setTimeout(() => { isSeeking = false; completingLock = false; }, 800);
+}
+
+// ---- عناصر التحكم المخصصة ----
+document.getElementById("playPauseBtn").addEventListener("click", () => {
+  if (!player || !player.getPlayerState) return;
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+  else player.playVideo();
+});
+
+document.getElementById("progressTrack").addEventListener("click", (e) => {
+  if (!player || !videoDuration) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const ratio = (e.clientX - rect.left) / rect.width;
+  const targetTime = ratio * videoDuration;
+  // اسمح بالرجوع لأي نقطة سبق مشاهدتها بس، امنع التقديم لقدام
+  if (targetTime <= maxWatchedSecond) {
+    isSeeking = true;
+    player.seekTo(targetTime, true);
+    setTimeout(() => { isSeeking = false; }, 600);
+  } else {
+    showToast("🔒 مينفعش تقدّم الفيديو");
+  }
+});
 
 function showQuestion(q) {
   pendingQuestion = q;
@@ -201,7 +348,7 @@ document.getElementById("subCheck").addEventListener("change", (e) => {
 document.getElementById("claimLikeBonus").addEventListener("click", async () => {
   markClaimed("claimLikeBonus", "likeCheck");
   await supabaseClient.from("lesson_progress").upsert({
-    student_id: student.id, lesson_id: lessonId, liked_commented: true, like_bonus_awarded: true, completed: true
+    student_id: student.id, lesson_id: lessonId, liked_commented: true, like_bonus_awarded: true
   }, { onConflict: "student_id,lesson_id" });
   await addPoints(15);
 });
@@ -209,7 +356,7 @@ document.getElementById("claimLikeBonus").addEventListener("click", async () => 
 document.getElementById("claimSubBonus").addEventListener("click", async () => {
   markClaimed("claimSubBonus", "subCheck");
   await supabaseClient.from("lesson_progress").upsert({
-    student_id: student.id, lesson_id: lessonId, subscribed_bell: true, subscribe_bonus_awarded: true, completed: true
+    student_id: student.id, lesson_id: lessonId, subscribed_bell: true, subscribe_bonus_awarded: true
   }, { onConflict: "student_id,lesson_id" });
   await addPoints(10);
 });

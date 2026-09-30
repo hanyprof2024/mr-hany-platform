@@ -47,6 +47,7 @@
       <div class="tab" data-tab="courses">الكورسات</div>
       <div class="tab" data-tab="lessons">الدروس</div>
       <div class="tab" data-tab="questions">الأسئلة</div>
+      <div class="tab" data-tab="settings">الإعدادات</div>
     </div>
 
     <!-- الفصول -->
@@ -130,6 +131,30 @@
       </div>
       <div class="glass card"><div id="questionList"></div></div>
     </div>
+
+    <!-- الإعدادات -->
+    <div class="section" id="sec-settings">
+      <div class="glass card">
+        <h2>🎁 نقاط مشاهدة الفيديو</h2>
+        <p class="muted">الطالب يقدر يتفرج على نفس الفيديو أكتر من مرة، وكل مشاهدة كاملة (100%) بتدّيله نقط — بحد أقصى يومي عشان النظام يفضل طبيعي.</p>
+
+        <label style="margin-top:12px;">نقط أول مشاهدة كاملة</label>
+        <input id="watchBonusInput" type="number">
+
+        <label>نقط كل مشاهدة إضافية لنفس الفيديو</label>
+        <input id="repeatWatchInput" type="number">
+
+        <label>أقصى عدد مشاهدات محتسبة نقط في اليوم لنفس الفيديو</label>
+        <input id="dailyCapInput" type="number">
+
+        <button class="btn btn-primary" id="saveSettingsBtn">حفظ</button>
+        <p id="settingsMsg" class="muted" style="display:none; margin-top:8px;"></p>
+      </div>
+      <div class="glass card">
+        <h2>💡 نصيحة</h2>
+        <p class="muted">سيبت الحد اليومي شغال عشان ساعات المشاهدة تزيد بشكل طبيعي وموزّع على كذا يوم بدل ما تتركز كلها في يوم واحد من نفس الطلاب — ده بيفيدك أكتر في معدل نمو القناة، وبيقلل احتمال إن يوتيوب يعتبر التكرار نمط غير طبيعي.</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -190,7 +215,33 @@ async function loadAll() {
   await loadLessons();
   await loadStudents();
   await loadQuestions();
+  await loadSettings();
 }
+
+async function loadSettings() {
+  const { data } = await supabaseClient
+    .from("app_settings").select("watch_bonus_points, repeat_watch_points, daily_watch_cap").eq("id", 1).maybeSingle();
+  document.getElementById("watchBonusInput").value = data ? data.watch_bonus_points : 20;
+  document.getElementById("repeatWatchInput").value = data ? data.repeat_watch_points : 5;
+  document.getElementById("dailyCapInput").value = data ? data.daily_watch_cap : 3;
+}
+
+document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+  const watchBonus = parseInt(document.getElementById("watchBonusInput").value);
+  const repeatPoints = parseInt(document.getElementById("repeatWatchInput").value);
+  const dailyCap = parseInt(document.getElementById("dailyCapInput").value);
+  const msg = document.getElementById("settingsMsg");
+  if ([watchBonus, repeatPoints, dailyCap].some(v => isNaN(v) || v < 0)) {
+    msg.textContent = "اكتب أرقام صحيحة في كل الحقول"; msg.style.color = "var(--coral)"; msg.style.display = "block";
+    return;
+  }
+  await supabaseClient.from("app_settings").update({
+    watch_bonus_points: watchBonus, repeat_watch_points: repeatPoints,
+    daily_watch_cap: dailyCap, updated_at: new Date().toISOString()
+  }).eq("id", 1);
+  msg.textContent = "تم الحفظ ✓"; msg.style.color = "var(--teal)"; msg.style.display = "block";
+  setTimeout(() => msg.style.display = "none", 2000);
+});
 
 async function loadClasses() {
   const { data } = await supabaseClient.from("classes").select("*").order("created_at");

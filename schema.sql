@@ -72,7 +72,12 @@ create table if not exists lesson_progress (
   id uuid primary key default gen_random_uuid(),
   student_id uuid references students(id) on delete cascade,
   lesson_id uuid references lessons(id) on delete cascade,
-  completed boolean default false,
+  completed boolean default false,          -- شاهد الفيديو 100% مرة واحدة على الأقل
+  max_watched_second int default 0,          -- أبعد ثانية وصلها في الجلسة الحالية (لمنع التقديم)
+  watch_bonus_awarded boolean default false, -- محتفظ بيه لأغراض توافق قديمة، مش مستخدم في منطق التكرار
+  watch_count int default 0,                 -- عدد مرات المشاهدة الكاملة إجمالاً
+  last_watch_date date,                      -- آخر يوم اتحسبله نقاط إعادة مشاهدة
+  watches_today int default 0,               -- عدد مرات المشاهدة المحسوبة نقاط النهاردة
   liked_commented boolean default false,
   like_bonus_awarded boolean default false,
   subscribed_bell boolean default false,
@@ -80,6 +85,18 @@ create table if not exists lesson_progress (
   updated_at timestamptz default now(),
   unique(student_id, lesson_id)
 );
+
+-- إعدادات عامة يتحكم فيها المعلم من لوحة الإدارة (صف واحد ثابت)
+create table if not exists app_settings (
+  id int primary key default 1,
+  watch_bonus_points int default 20,   -- نقط أول مشاهدة كاملة لأي فيديو
+  repeat_watch_points int default 5,   -- نقط كل مشاهدة كاملة إضافية لنفس الفيديو
+  daily_watch_cap int default 3,       -- أقصى عدد مرات إعادة مشاهدة تُحتسب نقط في اليوم لنفس الفيديو
+  updated_at timestamptz default now(),
+  constraint single_row check (id = 1)
+);
+insert into app_settings (id, watch_bonus_points, repeat_watch_points, daily_watch_cap) values (1, 20, 5, 3)
+  on conflict (id) do nothing;
 
 -- ============================================================
 -- Row Level Security
@@ -96,6 +113,7 @@ alter table lessons enable row level security;
 alter table questions enable row level security;
 alter table attempts enable row level security;
 alter table lesson_progress enable row level security;
+alter table app_settings enable row level security;
 
 -- قراءة عامة (الطلاب لازم يقروا الكورسات/الحصص/الأسئلة)
 create policy "public read classes" on classes for select using (true);
@@ -128,6 +146,10 @@ create policy "teacher manage questions" on questions for all using (auth.role()
 -- تسجيل الطالب لنفسه من صفحة register.html (بدون تسجيل دخول المعلم يدويًا لكل طالب)
 create policy "student self register" on students for insert with check (true);
 
+-- إعدادات النقاط: قراءة عامة (الطالب محتاج يعرف قيمة المكافأة)، وتعديل للمعلم بس
+create policy "public read settings" on app_settings for select using (true);
+create policy "teacher update settings" on app_settings for update using (auth.role() = 'authenticated');
+
 -- Realtime للوحة الصدارة
 alter publication supabase_realtime add table students;
 
@@ -143,3 +165,28 @@ alter table lesson_progress add column if not exists subscribe_bonus_awarded boo
 -- باب التسجيل الذاتي للطلاب (register.html):
 drop policy if exists "student self register" on students;
 create policy "student self register" on students for insert with check (true);
+
+-- ترقية تتبع مشاهدة الفيديو ونقاط الإكمال (منع التقديم + مكافأة المشاهدة الكاملة):
+alter table lesson_progress add column if not exists max_watched_second int default 0;
+alter table lesson_progress add column if not exists watch_bonus_awarded boolean default false;
+
+create table if not exists app_settings (
+  id int primary key default 1,
+  watch_bonus_points int default 20,
+  updated_at timestamptz default now(),
+  constraint single_row check (id = 1)
+);
+insert into app_settings (id, watch_bonus_points) values (1, 20)
+  on conflict (id) do nothing;
+alter table app_settings enable row level security;
+drop policy if exists "public read settings" on app_settings;
+create policy "public read settings" on app_settings for select using (true);
+drop policy if exists "teacher update settings" on app_settings;
+create policy "teacher update settings" on app_settings for update using (auth.role() = 'authenticated');
+
+-- ترقية إعادة المشاهدة بنقاط (نقاط في كل مشاهدة كاملة، بحد أقصى يومي لكل فيديو):
+alter table lesson_progress add column if not exists watch_count int default 0;
+alter table lesson_progress add column if not exists last_watch_date date;
+alter table lesson_progress add column if not exists watches_today int default 0;
+alter table app_settings add column if not exists repeat_watch_points int default 5;
+alter table app_settings add column if not exists daily_watch_cap int default 3;
