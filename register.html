@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تسجيل طالب جديد — أكاديمية مستر هاني</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="mark">هـ</span> أكاديمية مستر هاني</div>
+</div>
+
+<div class="wrap" style="max-width:420px;">
+  <div style="text-align:center; margin:30px 0 26px;">
+    <h1>سجّل بياناتك 📝</h1>
+    <p class="muted">دقيقة واحدة وهتقدر تدخل على طول على خطتك الدراسية</p>
+  </div>
+
+  <div class="glass card" id="formCard">
+    <label>الاسم بالكامل</label>
+    <input id="fullName" placeholder="اكتب اسمك رباعي" autocomplete="off">
+
+    <label>الصف/الفصل</label>
+    <select id="classSelect"><option value="">-- اختر فصلك --</option></select>
+
+    <label>رقم هاتف ولي الأمر (اختياري)</label>
+    <input id="parentPhone" placeholder="01xxxxxxxxx" autocomplete="off">
+
+    <button class="btn btn-primary btn-block" id="registerBtn">سجّل وادخل ←</button>
+    <p id="errMsg" class="muted" style="color:var(--coral); display:none; margin-top:10px;"></p>
+  </div>
+
+  <!-- تظهر بعد التسجيل -->
+  <div class="glass card" id="successCard" style="display:none; text-align:center;">
+    <h2>🎉 تم التسجيل بنجاح</h2>
+    <p class="muted">كود الدخول بتاعك (احفظه عشان تستخدمه في المرات الجاية):</p>
+    <div style="font-size:28px; font-weight:900; letter-spacing:3px; color:var(--gold); margin:14px 0;" id="codeDisplay">—</div>
+    <button class="btn btn-primary btn-block" id="continueBtn">كمّل لخطتي الدراسية ←</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script>
+if (getSession()) window.location.href = "dashboard.html";
+
+const params = new URLSearchParams(window.location.search);
+const preselectClass = params.get("class");
+
+async function loadClasses() {
+  const { data } = await supabaseClient.from("classes").select("id, name").order("created_at");
+  const select = document.getElementById("classSelect");
+  (data || []).forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.name;
+    select.appendChild(opt);
+  });
+  if (preselectClass) {
+    select.value = preselectClass;
+    select.disabled = true; // اللينك خاص بفصل معين
+  }
+}
+loadClasses();
+
+function genCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+let newStudent = null;
+
+document.getElementById("registerBtn").addEventListener("click", async () => {
+  const fullName = document.getElementById("fullName").value.trim();
+  const classId = document.getElementById("classSelect").value;
+  const parentPhone = document.getElementById("parentPhone").value.trim();
+  const errMsg = document.getElementById("errMsg");
+  errMsg.style.display = "none";
+
+  if (!fullName || !classId) {
+    errMsg.textContent = "من فضلك اكتب اسمك واختار فصلك";
+    errMsg.style.display = "block";
+    return;
+  }
+
+  const btn = document.getElementById("registerBtn");
+  btn.disabled = true;
+  btn.textContent = "جاري التسجيل...";
+
+  let code = genCode();
+  let { data, error } = await supabaseClient
+    .from("students")
+    .insert({ full_name: fullName, class_id: classId, parent_phone: parentPhone || null, access_code: code })
+    .select()
+    .single();
+
+  // لو اتصادف الكود اتكرر (نادر جدًا)، جرب مرة تانية بكود مختلف
+  if (error && error.code === "23505") {
+    code = genCode();
+    ({ data, error } = await supabaseClient
+      .from("students")
+      .insert({ full_name: fullName, class_id: classId, parent_phone: parentPhone || null, access_code: code })
+      .select()
+      .single());
+  }
+
+  btn.disabled = false;
+  btn.textContent = "سجّل وادخل ←";
+
+  if (error || !data) {
+    errMsg.textContent = "حصل خطأ في التسجيل، حاول تاني";
+    errMsg.style.display = "block";
+    return;
+  }
+
+  newStudent = data;
+  document.getElementById("codeDisplay").textContent = data.access_code;
+  document.getElementById("formCard").style.display = "none";
+  document.getElementById("successCard").style.display = "block";
+});
+
+document.getElementById("continueBtn").addEventListener("click", () => {
+  saveSession(newStudent);
+  window.location.href = "dashboard.html";
+});
+</script>
+</body>
+</html>

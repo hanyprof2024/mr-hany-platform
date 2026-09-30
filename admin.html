@@ -62,7 +62,18 @@
     <!-- الطلاب -->
     <div class="section" id="sec-students">
       <div class="glass card">
-        <h2>إضافة طالب</h2>
+        <h2>🔗 رابط تسجيل الطلاب (ذاتي)</h2>
+        <p class="muted">ابعت اللينك ده للطلاب، وهيسجلوا بياناتهم بنفسهم من غير ما تضطر تضيفهم واحد واحد.</p>
+        <div class="row" style="margin-top:10px;">
+          <input id="generalRegLink" readonly>
+          <button class="btn btn-ghost" id="copyGeneralLink" style="white-space:nowrap;">نسخ</button>
+        </div>
+        <p class="muted" style="margin-top:10px; font-size:12px;">أو لينك خاص بفصل معين (بيختار الفصل تلقائي وميوريهوش اختيار):</p>
+        <div id="perClassLinks" style="margin-top:6px;"></div>
+      </div>
+
+      <div class="glass card">
+        <h2>إضافة طالب يدويًا (اختياري)</h2>
         <label>الفصل</label>
         <select id="studentClass"></select>
         <input id="studentName" placeholder="اسم الطالب (اختياري، هيدخله هو بنفسه)">
@@ -191,7 +202,32 @@ async function loadClasses() {
   const opts = classes.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
   document.getElementById("studentClass").innerHTML = opts;
   document.getElementById("courseClass").innerHTML = opts;
+
+  const base = window.location.origin + window.location.pathname.replace("admin.html", "");
+  document.getElementById("generalRegLink").value = base + "register.html";
+  document.getElementById("perClassLinks").innerHTML = classes.map(c =>
+    `<div class="row" style="margin-bottom:8px;">
+      <input readonly value="${base}register.html?class=${c.id}" style="margin-bottom:0; font-size:13px;">
+      <button class="btn btn-ghost copyClassLink" data-link="${base}register.html?class=${c.id}" style="white-space:nowrap;">نسخ</button>
+    </div>`
+  ).join("") || '<p class="muted">أضف فصل الأول عشان تولد لينكاته</p>';
+
+  document.querySelectorAll(".copyClassLink").forEach(btn => {
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(btn.dataset.link);
+      btn.textContent = "اتنسخ ✓";
+      setTimeout(() => btn.textContent = "نسخ", 1500);
+    });
+  });
 }
+
+document.getElementById("copyGeneralLink").addEventListener("click", () => {
+  const input = document.getElementById("generalRegLink");
+  navigator.clipboard.writeText(input.value);
+  const btn = document.getElementById("copyGeneralLink");
+  btn.textContent = "اتنسخ ✓";
+  setTimeout(() => btn.textContent = "نسخ", 1500);
+});
 
 async function loadCourses() {
   const { data } = await supabaseClient.from("courses").select("*, classes(name)").order("created_at");

@@ -125,6 +125,9 @@ create policy "teacher manage courses" on courses for all using (auth.role() = '
 create policy "teacher manage lessons" on lessons for all using (auth.role() = 'authenticated');
 create policy "teacher manage questions" on questions for all using (auth.role() = 'authenticated');
 
+-- تسجيل الطالب لنفسه من صفحة register.html (بدون تسجيل دخول المعلم يدويًا لكل طالب)
+create policy "student self register" on students for insert with check (true);
+
 -- Realtime للوحة الصدارة
 alter publication supabase_realtime add table students;
 
@@ -135,3 +138,8 @@ alter publication supabase_realtime add table students;
 alter table lesson_progress add column if not exists like_bonus_awarded boolean default false;
 alter table lesson_progress add column if not exists subscribed_bell boolean default false;
 alter table lesson_progress add column if not exists subscribe_bonus_awarded boolean default false;
+
+-- لو مشروعك كان شغال بنسخة قديمة، شغّل السطرين دول كمان عشان تفتح
+-- باب التسجيل الذاتي للطلاب (register.html):
+drop policy if exists "student self register" on students;
+create policy "student self register" on students for insert with check (true);
