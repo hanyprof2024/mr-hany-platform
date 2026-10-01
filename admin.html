@@ -258,7 +258,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
 });
 
 async function loadClasses() {
-  const { data } = await supabaseClient.from("classes").select("*").order("created_at");
+  const { data, error } = await supabaseClient.from("classes").select("*").order("created_at");
+  if (error) { showToast("❌ فشل تحميل الفصول: " + error.message); console.error(error); }
   classes = data || [];
   document.getElementById("classList").innerHTML = classes.map(c =>
     `<div class="list-item"><span>${c.name}</span><span class="del" onclick="delRow('classes','${c.id}')">حذف</span></div>`
@@ -295,7 +296,8 @@ document.getElementById("copyGeneralLink").addEventListener("click", () => {
 });
 
 async function loadCourses() {
-  const { data } = await supabaseClient.from("courses").select("*, classes(name)").order("created_at");
+  const { data, error } = await supabaseClient.from("courses").select("*, classes(name)").order("created_at");
+  if (error) { showToast("❌ فشل تحميل الكورسات: " + error.message); console.error(error); }
   courses = data || [];
   document.getElementById("courseList").innerHTML = courses.map(c =>
     `<div class="list-item"><span>${c.title} <span class="muted">(${c.classes?.name || ""})</span></span><span class="del" onclick="delRow('courses','${c.id}')">حذف</span></div>`
@@ -306,7 +308,8 @@ async function loadCourses() {
 }
 
 async function loadLessons() {
-  const { data } = await supabaseClient.from("lessons").select("*, courses(title)").order("created_at");
+  const { data, error } = await supabaseClient.from("lessons").select("*, courses(title)").order("created_at");
+  if (error) { showToast("❌ فشل تحميل الدروس: " + error.message); console.error(error); }
   lessons = data || [];
   document.getElementById("lessonList").innerHTML = lessons.map(l =>
     `<div class="list-item"><span>${l.title} <span class="muted">(${l.courses?.title || ""})</span></span><span class="del" onclick="delRow('lessons','${l.id}')">حذف</span></div>`
@@ -317,7 +320,8 @@ async function loadLessons() {
 }
 
 async function loadStudents() {
-  const { data } = await supabaseClient.from("students").select("*, classes(name)").order("created_at");
+  const { data, error } = await supabaseClient.from("students").select("*, classes(name)").order("created_at");
+  if (error) { showToast("❌ فشل تحميل الطلاب: " + error.message); console.error(error); }
   document.getElementById("studentList").innerHTML = (data || []).map(s =>
     `<div class="list-item"><span>${s.full_name || "(لسه مسجلش)"} — كود: <b>${s.access_code}</b> <span class="muted">(${s.classes?.name || ""})</span></span><span class="del" onclick="delRow('students','${s.id}')">حذف</span></div>`
   ).join("") || '<p class="muted">مفيش طلاب لسه</p>';
@@ -326,7 +330,10 @@ async function loadStudents() {
 let questionsCache = [];
 
 async function loadQuestions() {
-  const { data } = await supabaseClient.from("questions").select("*, lessons(title)").order("created_at", {ascending:false});
+  const { data, error } = await supabaseClient
+    .from("questions").select("*, lessons(title)")
+    .order("lesson_id").order("trigger_second");
+  if (error) { showToast("❌ فشل تحميل الأسئلة: " + error.message); console.error(error); }
   questionsCache = data || [];
   document.getElementById("questionList").innerHTML = questionsCache.map(q => `
     <div class="q-card">
