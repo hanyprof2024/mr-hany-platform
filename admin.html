@@ -16,6 +16,16 @@
   .del { color:var(--coral); cursor:pointer; font-size:13px; }
   .choice-input { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
   .choice-input input[type=radio]{ width:auto; margin:0; }
+  .q-card { padding:14px 0; border-bottom:1px solid var(--glass-border); }
+  .q-card:last-child { border-bottom:none; }
+  .q-actions { display:flex; gap:12px; font-size:13px; margin-top:6px; }
+  .q-actions span { cursor:pointer; color:var(--text-1); }
+  .q-actions span:hover { color:var(--text-0); }
+  .q-choices-mini { font-size:13px; color:var(--text-1); margin-top:4px; }
+  .q-choices-mini b { color:var(--teal); }
+  .stats-box { display:none; margin-top:12px; padding:12px; border-radius:10px; background:rgba(255,255,255,0.04); }
+  .stats-summary { display:flex; gap:18px; margin-bottom:10px; font-size:13px; }
+  .student-ans-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.06); }
 </style>
 </head>
 <body>
@@ -114,7 +124,7 @@
     <!-- الأسئلة -->
     <div class="section" id="sec-questions">
       <div class="glass card">
-        <h2>إضافة سؤال على فيديو</h2>
+        <h2 id="questionFormTitle">إضافة سؤال على فيديو</h2>
         <label>الدرس</label>
         <select id="questionLesson"></select>
         <input id="qSecond" type="number" placeholder="ثانية ظهور السؤال (مثال: 90)">
@@ -127,7 +137,10 @@
         </div>
         <p class="muted" style="margin:4px 0 10px;">حدد دائرة الاختيار الصحيح</p>
         <input id="qPoints" type="number" value="10" placeholder="عدد النقاط">
-        <button class="btn btn-primary" id="addQuestionBtn">إضافة السؤال</button>
+        <div class="row">
+          <button class="btn btn-primary" id="addQuestionBtn" style="flex:1;">إضافة السؤال</button>
+          <button class="btn btn-ghost" id="cancelEditBtn" style="display:none;">إلغاء التعديل</button>
+        </div>
       </div>
       <div class="glass card"><div id="questionList"></div></div>
     </div>
@@ -309,12 +322,102 @@ async function loadStudents() {
   ).join("") || '<p class="muted">مفيش طلاب لسه</p>';
 }
 
+let questionsCache = [];
+
 async function loadQuestions() {
   const { data } = await supabaseClient.from("questions").select("*, lessons(title)").order("created_at", {ascending:false});
-  document.getElementById("questionList").innerHTML = (data || []).map(q =>
-    `<div class="list-item"><span>${q.prompt} <span class="muted">— ث${q.trigger_second} — (${q.lessons?.title || ""})</span></span><span class="del" onclick="delRow('questions','${q.id}')">حذف</span></div>`
-  ).join("") || '<p class="muted">مفيش أسئلة لسه</p>';
+  questionsCache = data || [];
+  document.getElementById("questionList").innerHTML = questionsCache.map(q => `
+    <div class="q-card">
+      <div class="row between">
+        <div>
+          <div><b>${q.prompt}</b></div>
+          <div class="muted" style="font-size:12px;">ث${q.trigger_second} — ${q.lessons?.title || ""} — ${q.points} نقطة</div>
+          <div class="q-choices-mini">${q.choices.map((c, i) => i === q.correct_index ? `<b>✓ ${c}</b>` : c).join(" · ")}</div>
+        </div>
+      </div>
+      <div class="q-actions">
+        <span onclick="toggleStats('${q.id}')">📊 الإحصائيات</span>
+        <span onclick="startEditQuestion('${q.id}')">✏️ تعديل</span>
+        <span class="del" onclick="delRow('questions','${q.id}')">🗑️ حذف</span>
+      </div>
+      <div class="stats-box" id="stats-${q.id}"></div>
+    </div>
+  `).join("") || '<p class="muted">مفيش أسئلة لسه</p>';
 }
+
+async function toggleStats(qId) {
+  const box = document.getElementById(`stats-${qId}`);
+  const isOpen = box.style.display === "block";
+  document.querySelectorAll(".stats-box").forEach(b => b.style.display = "none");
+  if (isOpen) return;
+
+  box.style.display = "block";
+  box.innerHTML = '<p class="muted">جاري التحميل...</p>';
+
+  const { data: attempts } = await supabaseClient
+    .from("attempts")
+    .select("is_correct, chosen_index, created_at, students(full_name)")
+    .eq("question_id", qId)
+    .order("created_at", { ascending: false });
+
+  const list = attempts || [];
+  const correctCount = list.filter(a => a.is_correct).length;
+  const wrongCount = list.length - correctCount;
+
+  const rows = list.map(a => `
+    <div class="student-ans-row">
+      <span>${a.students?.full_name || "طالب محذوف"}</span>
+      <span style="color:${a.is_correct ? 'var(--teal)' : 'var(--coral)'};">${a.is_correct ? "✅ صح" : "❌ غلط"}</span>
+    </div>
+  `).join("") || '<p class="muted">محدش جاوب على السؤال ده لسه</p>';
+
+  box.innerHTML = `
+    <div class="stats-summary">
+      <span>✅ صح: <b style="color:var(--teal);">${correctCount}</b></span>
+      <span>❌ غلط: <b style="color:var(--coral);">${wrongCount}</b></span>
+      <span>المجموع: <b>${list.length}</b></span>
+    </div>
+    ${rows}
+  `;
+}
+
+let editingQuestionId = null;
+
+function startEditQuestion(qId) {
+  const q = questionsCache.find(x => x.id === qId);
+  if (!q) return;
+  editingQuestionId = qId;
+
+  document.getElementById("questionFormTitle").textContent = "تعديل السؤال";
+  document.getElementById("questionLesson").value = q.lesson_id;
+  document.getElementById("qSecond").value = q.trigger_second;
+  document.getElementById("qPrompt").value = q.prompt;
+  document.getElementById("qPoints").value = q.points;
+
+  const choiceInputs = document.querySelectorAll("#choicesBox .choice-input input:not([type=radio])");
+  const radios = document.querySelectorAll('input[name="correct"]');
+  choiceInputs.forEach((input, i) => { input.value = q.choices[i] || ""; });
+  radios.forEach((r, i) => { r.checked = (i === q.correct_index); });
+
+  document.getElementById("addQuestionBtn").textContent = "تحديث السؤال";
+  document.getElementById("cancelEditBtn").style.display = "inline-flex";
+  document.getElementById("sec-questions").scrollIntoView({ behavior: "smooth" });
+}
+
+function resetQuestionForm() {
+  editingQuestionId = null;
+  document.getElementById("questionFormTitle").textContent = "إضافة سؤال على فيديو";
+  document.getElementById("qSecond").value = "";
+  document.getElementById("qPrompt").value = "";
+  document.getElementById("qPoints").value = 10;
+  document.querySelectorAll("#choicesBox input:not([type=radio])").forEach(i => i.value = "");
+  document.querySelector('input[name="correct"][value="0"]').checked = true;
+  document.getElementById("addQuestionBtn").textContent = "إضافة السؤال";
+  document.getElementById("cancelEditBtn").style.display = "none";
+}
+
+document.getElementById("cancelEditBtn").addEventListener("click", resetQuestionForm);
 
 async function delRow(table, id) {
   if (!confirm("متأكد من الحذف؟")) return;
@@ -390,14 +493,19 @@ document.getElementById("addQuestionBtn").addEventListener("click", async () => 
     showToast("أكمل بيانات السؤال"); return;
   }
 
-  await supabaseClient.from("questions").insert({
-    lesson_id, trigger_second, prompt, choices, correct_index: correctIdx, points
-  });
+  if (editingQuestionId) {
+    await supabaseClient.from("questions").update({
+      lesson_id, trigger_second, prompt, choices, correct_index: correctIdx, points
+    }).eq("id", editingQuestionId);
+    showToast("تم تحديث السؤال");
+  } else {
+    await supabaseClient.from("questions").insert({
+      lesson_id, trigger_second, prompt, choices, correct_index: correctIdx, points
+    });
+    showToast("تم إضافة السؤال");
+  }
 
-  document.getElementById("qSecond").value = "";
-  document.getElementById("qPrompt").value = "";
-  document.querySelectorAll("#choicesBox input:not([type=radio])").forEach(i => i.value = "");
-  showToast("تم إضافة السؤال");
+  resetQuestionForm();
   loadQuestions();
 });
 
