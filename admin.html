@@ -181,7 +181,8 @@ let classes = [], courses = [], lessons = [];
 function showToast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.style.display = "block";
-  setTimeout(() => t.style.display = "none", 1800);
+  const duration = msg.startsWith("❌") ? 5000 : 1800;
+  setTimeout(() => t.style.display = "none", duration);
 }
 
 // ---- تسجيل الدخول ----
@@ -421,7 +422,8 @@ document.getElementById("cancelEditBtn").addEventListener("click", resetQuestion
 
 async function delRow(table, id) {
   if (!confirm("متأكد من الحذف؟")) return;
-  await supabaseClient.from(table).delete().eq("id", id);
+  const { error } = await supabaseClient.from(table).delete().eq("id", id);
+  if (error) { showToast("❌ فشل الحذف: " + error.message); console.error(error); return; }
   loadAll();
 }
 
@@ -429,7 +431,8 @@ async function delRow(table, id) {
 document.getElementById("addClassBtn").addEventListener("click", async () => {
   const name = document.getElementById("className").value.trim();
   if (!name) return;
-  await supabaseClient.from("classes").insert({ name });
+  const { error } = await supabaseClient.from("classes").insert({ name });
+  if (error) { showToast("❌ فشل الحفظ: " + error.message); console.error(error); return; }
   document.getElementById("className").value = "";
   showToast("تم إضافة الفصل");
   loadClasses();
@@ -444,9 +447,10 @@ document.getElementById("addStudentBtn").addEventListener("click", async () => {
   const full_name = document.getElementById("studentName").value.trim();
   const parent_phone = document.getElementById("studentPhone").value.trim();
   if (!class_id) { showToast("أضف فصل الأول"); return; }
-  await supabaseClient.from("students").insert({
+  const { error } = await supabaseClient.from("students").insert({
     class_id, full_name, parent_phone, access_code: genCode()
   });
+  if (error) { showToast("❌ فشل الحفظ: " + error.message); console.error(error); return; }
   document.getElementById("studentName").value = "";
   document.getElementById("studentPhone").value = "";
   showToast("تم إضافة الطالب");
@@ -458,7 +462,8 @@ document.getElementById("addCourseBtn").addEventListener("click", async () => {
   const class_id = document.getElementById("courseClass").value;
   const title = document.getElementById("courseTitle").value.trim();
   if (!class_id || !title) return;
-  await supabaseClient.from("courses").insert({ class_id, title });
+  const { error } = await supabaseClient.from("courses").insert({ class_id, title });
+  if (error) { showToast("❌ فشل الحفظ: " + error.message); console.error(error); return; }
   document.getElementById("courseTitle").value = "";
   showToast("تم إضافة الكورس");
   loadCourses();
@@ -471,7 +476,8 @@ document.getElementById("addLessonBtn").addEventListener("click", async () => {
   const youtube_video_id = document.getElementById("lessonVideoId").value.trim();
   const reading_url = document.getElementById("lessonReading").value.trim();
   if (!course_id || !title || !youtube_video_id) { showToast("أكمل بيانات الدرس"); return; }
-  await supabaseClient.from("lessons").insert({ course_id, title, youtube_video_id, reading_url: reading_url || null });
+  const { error } = await supabaseClient.from("lessons").insert({ course_id, title, youtube_video_id, reading_url: reading_url || null });
+  if (error) { showToast("❌ فشل الحفظ: " + error.message); console.error(error); return; }
   document.getElementById("lessonTitle").value = "";
   document.getElementById("lessonVideoId").value = "";
   document.getElementById("lessonReading").value = "";
@@ -493,18 +499,24 @@ document.getElementById("addQuestionBtn").addEventListener("click", async () => 
     showToast("أكمل بيانات السؤال"); return;
   }
 
+  let error;
   if (editingQuestionId) {
-    await supabaseClient.from("questions").update({
+    ({ error } = await supabaseClient.from("questions").update({
       lesson_id, trigger_second, prompt, choices, correct_index: correctIdx, points
-    }).eq("id", editingQuestionId);
-    showToast("تم تحديث السؤال");
+    }).eq("id", editingQuestionId));
   } else {
-    await supabaseClient.from("questions").insert({
+    ({ error } = await supabaseClient.from("questions").insert({
       lesson_id, trigger_second, prompt, choices, correct_index: correctIdx, points
-    });
-    showToast("تم إضافة السؤال");
+    }));
   }
 
+  if (error) {
+    showToast("❌ فشل الحفظ: " + error.message);
+    console.error("questions save error:", error);
+    return;
+  }
+
+  showToast(editingQuestionId ? "تم تحديث السؤال" : "تم إضافة السؤال");
   resetQuestionForm();
   loadQuestions();
 });
