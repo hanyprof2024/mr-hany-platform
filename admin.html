@@ -26,6 +26,12 @@
   .stats-box { display:none; margin-top:12px; padding:12px; border-radius:10px; background:rgba(255,255,255,0.04); }
   .stats-summary { display:flex; gap:18px; margin-bottom:10px; font-size:13px; }
   .student-ans-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.06); }
+  .table-wrap { overflow-x:auto; }
+  table.report { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+  table.report th { text-align:right; padding:8px 10px; color:var(--text-1); font-weight:700; border-bottom:1px solid var(--glass-border); }
+  table.report td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); }
+  table.report tr:last-child td { border-bottom:none; }
+  table.report td.code { font-family:monospace; color:var(--gold); font-weight:700; }
 </style>
 </head>
 <body>
@@ -81,6 +87,25 @@
         </div>
         <p class="muted" style="margin-top:10px; font-size:12px;">أو لينك خاص بفصل معين (بيختار الفصل تلقائي وميوريهوش اختيار):</p>
         <div id="perClassLinks" style="margin-top:6px;"></div>
+      </div>
+
+      <div class="glass card">
+        <div class="row between">
+          <h2>📊 تقرير الطلاب الشامل</h2>
+          <button class="btn btn-ghost" id="refreshReportBtn" style="padding:6px 14px; font-size:13px;">تحديث</button>
+        </div>
+        <p class="muted" style="margin-bottom:10px;">الترتيب العام محسوب على كل الطلاب بالنقاط، والفيديوهات المكتملة/الغير مكتملة محسوبة بالنسبة لإجمالي دروس فصل كل طالب.</p>
+        <div class="table-wrap">
+          <table class="report" id="reportTable">
+            <thead>
+              <tr>
+                <th>م</th><th>الاسم</th><th>الفصل</th><th>كود الدخول</th><th>النقاط</th>
+                <th>الترتيب العام</th><th>فيديوهات مكتملة</th><th>فيديوهات غير مكتملة</th>
+              </tr>
+            </thead>
+            <tbody id="reportBody"><tr><td colspan="8" class="muted">جاري التحميل...</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="glass card">
@@ -230,6 +255,67 @@ async function loadAll() {
   await loadStudents();
   await loadQuestions();
   await loadSettings();
+  await loadStudentReport();
+}
+
+document.getElementById("refreshReportBtn").addEventListener("click", loadStudentReport);
+
+async function loadStudentReport() {
+  const tbody = document.getElementById("reportBody");
+  tbody.innerHTML = '<tr><td colspan="8" class="muted">جاري التحميل...</td></tr>';
+
+  const { data: students, error: sErr } = await supabaseClient
+    .from("students").select("*, classes(name)");
+  const { data: progress, error: pErr } = await supabaseClient
+    .from("lesson_progress").select("student_id, completed");
+
+  if (sErr || pErr) {
+    tbody.innerHTML = `<tr><td colspan="8" class="muted">❌ فشل التحميل: ${(sErr || pErr).message}</td></tr>`;
+    return;
+  }
+
+  // إجمالي عدد دروس كل فصل (عن طريق الكورسات المرتبطة بيه)
+  const courseClassMap = {}; // course_id -> class_id
+  courses.forEach(c => { courseClassMap[c.id] = c.class_id; });
+  const lessonCountByClass = {};
+  lessons.forEach(l => {
+    const classId = courseClassMap[l.course_id];
+    if (!classId) return;
+    lessonCountByClass[classId] = (lessonCountByClass[classId] || 0) + 1;
+  });
+
+  // عدد الفيديوهات المكتملة لكل طالب
+  const completedByStudent = {};
+  (progress || []).forEach(p => {
+    if (p.completed) completedByStudent[p.student_id] = (completedByStudent[p.student_id] || 0) + 1;
+  });
+
+  // الترتيب العام بالنقاط
+  const ranked = [...(students || [])].sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
+  const rankMap = {};
+  ranked.forEach((s, i) => { rankMap[s.id] = i + 1; });
+
+  if (!students || students.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="muted">مفيش طلاب مسجلين لسه</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = students.map((s, i) => {
+    const totalLessons = lessonCountByClass[s.class_id] || 0;
+    const completed = completedByStudent[s.id] || 0;
+    const notCompleted = Math.max(0, totalLessons - completed);
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${s.full_name || "—"}</td>
+        <td>${s.classes?.name || "—"}</td>
+        <td class="code">${s.access_code}</td>
+        <td>${s.total_points || 0}</td>
+        <td>#${rankMap[s.id]}</td>
+        <td>${completed}</td>
+        <td>${notCompleted}</td>
+      </tr>`;
+  }).join("");
 }
 
 async function loadSettings() {
