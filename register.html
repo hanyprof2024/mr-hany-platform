@@ -89,6 +89,28 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
   btn.textContent = "جاري التسجيل...";
 
   try {
+    // امنع تسجيل نفس الاسم مرتين في نفس الفصل
+    const normalizedName = fullName.replace(/\s+/g, " ").trim().toLowerCase();
+    const { data: existing, error: checkError } = await supabaseClient
+      .from("students").select("full_name").eq("class_id", classId);
+
+    if (checkError) {
+      errMsg.textContent = "حصل خطأ: " + checkError.message;
+      errMsg.style.display = "block";
+      btn.disabled = false; btn.textContent = "سجّل وادخل ←";
+      return;
+    }
+
+    const isDuplicate = (existing || []).some(s =>
+      (s.full_name || "").replace(/\s+/g, " ").trim().toLowerCase() === normalizedName
+    );
+    if (isDuplicate) {
+      errMsg.textContent = "انت مسجل بالفعل بنفس الاسم في الفصل ده. لو نسيت كودك، اسأل المعلم يجيبهولك من لوحة التحكم.";
+      errMsg.style.display = "block";
+      btn.disabled = false; btn.textContent = "سجّل وادخل ←";
+      return;
+    }
+
     let code = genCode();
     let { data, error } = await supabaseClient
       .from("students")
