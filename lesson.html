@@ -80,7 +80,7 @@
       <button class="btn btn-primary" id="claimLikeBonus" style="margin-top:10px;" disabled>استلم +15 نقطة</button>
     </div>
 
-    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border);">
+    <div id="subBonusBlock" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border); display:none;">
       <label>
         <input type="checkbox" id="subCheck" style="width:auto; display:inline-block; margin-inline-end:8px;">
         مشترك في القناة وفعّلت جرس التنبيهات 🔔
@@ -129,6 +129,13 @@ async function init() {
     .in("question_id", questions.map(q => q.id));
   (attempts || []).forEach(a => answeredIds.add(a.question_id));
 
+  // نقط الاشتراك + الجرس مرة واحدة بس لكل طالب (عالمية، مش لكل فيديو)
+  const { data: freshStudent } = await supabaseClient
+    .from("students").select("subscribed_bonus_claimed").eq("id", student.id).maybeSingle();
+  if (!(freshStudent && freshStudent.subscribed_bonus_claimed)) {
+    document.getElementById("subBonusBlock").style.display = "block";
+  }
+
   const { data: settings } = await supabaseClient
     .from("app_settings").select("watch_bonus_points, repeat_watch_points, daily_watch_cap").eq("id", 1).maybeSingle();
   if (settings) {
@@ -159,7 +166,6 @@ async function loadProgress() {
 
   if (prog.completed) updateWatchStatusUI();
   if (prog.like_bonus_awarded) markClaimed("claimLikeBonus", "likeCheck");
-  if (prog.subscribe_bonus_awarded) markClaimed("claimSubBonus", "subCheck");
 }
 
 function updateWatchStatusUI() {
@@ -385,7 +391,9 @@ document.getElementById("claimSubBonus").addEventListener("click", async () => {
   await supabaseClient.from("lesson_progress").upsert({
     student_id: student.id, lesson_id: lessonId, subscribed_bell: true, subscribe_bonus_awarded: true
   }, { onConflict: "student_id,lesson_id" });
+  await supabaseClient.from("students").update({ subscribed_bonus_claimed: true }).eq("id", student.id);
   await addPoints(10);
+  setTimeout(() => { document.getElementById("subBonusBlock").style.display = "none"; }, 1200);
 });
 
 init();

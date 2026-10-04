@@ -18,6 +18,7 @@ create table if not exists students (
   access_code text unique not null,   -- كود دخول الطالب (بدل باسورد)
   parent_phone text,
   total_points int default 0,
+  subscribed_bonus_claimed boolean default false, -- نقط الاشتراك+الجرس تُحتسب مرة واحدة بس لكل الطالب (مش لكل فيديو)
   created_at timestamptz default now()
 );
 create index if not exists idx_students_access_code on students(access_code);
@@ -190,3 +191,6 @@ alter table lesson_progress add column if not exists last_watch_date date;
 alter table lesson_progress add column if not exists watches_today int default 0;
 alter table app_settings add column if not exists repeat_watch_points int default 5;
 alter table app_settings add column if not exists daily_watch_cap int default 3;
+
+-- ترقية: نقط الاشتراك + الجرس تُحتسب مرة واحدة بس لكل طالب (مش قابلة للتكرار تحت كل فيديو)
+alter table students add column if not exists subscribed_bonus_claimed boolean default false;
