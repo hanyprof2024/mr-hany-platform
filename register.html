@@ -88,36 +88,45 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "جاري التسجيل...";
 
-  let code = genCode();
-  let { data, error } = await supabaseClient
-    .from("students")
-    .insert({ full_name: fullName, class_id: classId, parent_phone: parentPhone || null, access_code: code })
-    .select()
-    .single();
-
-  // لو اتصادف الكود اتكرر (نادر جدًا)، جرب مرة تانية بكود مختلف
-  if (error && error.code === "23505") {
-    code = genCode();
-    ({ data, error } = await supabaseClient
+  try {
+    let code = genCode();
+    let { data, error } = await supabaseClient
       .from("students")
       .insert({ full_name: fullName, class_id: classId, parent_phone: parentPhone || null, access_code: code })
       .select()
-      .single());
-  }
+      .single();
 
-  btn.disabled = false;
-  btn.textContent = "سجّل وادخل ←";
+    // لو اتصادف الكود اتكرر (نادر جدًا)، جرب مرة تانية بكود مختلف
+    if (error && error.code === "23505") {
+      code = genCode();
+      ({ data, error } = await supabaseClient
+        .from("students")
+        .insert({ full_name: fullName, class_id: classId, parent_phone: parentPhone || null, access_code: code })
+        .select()
+        .single());
+    }
 
-  if (error || !data) {
-    errMsg.textContent = "حصل خطأ في التسجيل، حاول تاني";
+    btn.disabled = false;
+    btn.textContent = "سجّل وادخل ←";
+
+    if (error || !data) {
+      errMsg.textContent = "حصل خطأ: " + (error ? error.message : "مفيش بيانات رجعت");
+      errMsg.style.display = "block";
+      console.error("register error:", error);
+      return;
+    }
+
+    newStudent = data;
+    document.getElementById("codeDisplay").textContent = data.access_code;
+    document.getElementById("formCard").style.display = "none";
+    document.getElementById("successCard").style.display = "block";
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "سجّل وادخل ←";
+    errMsg.textContent = "مشكلة في الاتصال بالإنترنت، حاول تاني: " + err.message;
     errMsg.style.display = "block";
-    return;
+    console.error("register network error:", err);
   }
-
-  newStudent = data;
-  document.getElementById("codeDisplay").textContent = data.access_code;
-  document.getElementById("formCard").style.display = "none";
-  document.getElementById("successCard").style.display = "block";
 });
 
 document.getElementById("continueBtn").addEventListener("click", () => {
