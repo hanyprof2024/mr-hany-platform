@@ -94,16 +94,18 @@
           <h2>📊 تقرير الطلاب الشامل</h2>
           <button class="btn btn-ghost" id="refreshReportBtn" style="padding:6px 14px; font-size:13px;">تحديث</button>
         </div>
-        <p class="muted" style="margin-bottom:10px;">الترتيب العام محسوب على كل الطلاب بالنقاط، والفيديوهات المكتملة/الغير مكتملة محسوبة بالنسبة لإجمالي دروس فصل كل طالب.</p>
+        <label style="margin-top:6px;">فلتر الفصل</label>
+        <select id="reportClassFilter"><option value="all">كل الفصول (مجمّعة)</option></select>
+        <p class="muted" style="margin-bottom:10px;">الطلاب مرتبين دايمًا من الأعلى نقاط للأقل جوه كل فصل. "ترتيب الفصل" رقمه خاص بالفصل نفسه، و"الترتيب العام" بين كل الطلاب في كل الفصول.</p>
         <div class="table-wrap">
           <table class="report" id="reportTable">
             <thead>
               <tr>
                 <th>م</th><th>الاسم</th><th>الفصل</th><th>كود الدخول</th><th>النقاط</th>
-                <th>الترتيب العام</th><th>فيديوهات مكتملة</th><th>فيديوهات غير مكتملة</th>
+                <th>ترتيب الفصل</th><th>الترتيب العام</th><th>فيديوهات مكتملة</th><th>فيديوهات غير مكتملة</th>
               </tr>
             </thead>
-            <tbody id="reportBody"><tr><td colspan="8" class="muted">جاري التحميل...</td></tr></tbody>
+            <tbody id="reportBody"><tr><td colspan="9" class="muted">جاري التحميل...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -259,20 +261,28 @@ async function loadAll() {
 }
 
 document.getElementById("refreshReportBtn").addEventListener("click", loadStudentReport);
+document.getElementById("reportClassFilter").addEventListener("change", loadStudentReport);
 
 async function loadStudentReport() {
   const tbody = document.getElementById("reportBody");
-  tbody.innerHTML = '<tr><td colspan="8" class="muted">جاري التحميل...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" class="muted">جاري التحميل...</td></tr>';
 
-  const { data: students, error: sErr } = await supabaseClient
+  const filterEl = document.getElementById("reportClassFilter");
+  const selectedClass = filterEl ? filterEl.value : "all";
+
+  const { data: allStudents, error: sErr } = await supabaseClient
     .from("students").select("*, classes(name)");
   const { data: progress, error: pErr } = await supabaseClient
     .from("lesson_progress").select("student_id, completed");
 
   if (sErr || pErr) {
-    tbody.innerHTML = `<tr><td colspan="8" class="muted">❌ فشل التحميل: ${(sErr || pErr).message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="muted">❌ فشل التحميل: ${(sErr || pErr).message}</td></tr>`;
     return;
   }
+
+  const students = selectedClass === "all"
+    ? (allStudents || [])
+    : (allStudents || []).filter(s => s.class_id === selectedClass);
 
   // إجمالي عدد دروس كل فصل (عن طريق الكورسات المرتبطة بيه)
   const courseClassMap = {}; // course_id -> class_id
@@ -290,32 +300,52 @@ async function loadStudentReport() {
     if (p.completed) completedByStudent[p.student_id] = (completedByStudent[p.student_id] || 0) + 1;
   });
 
-  // الترتيب العام بالنقاط
-  const ranked = [...(students || [])].sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
-  const rankMap = {};
-  ranked.forEach((s, i) => { rankMap[s.id] = i + 1; });
+  // الترتيب العام بالنقاط (دايمًا محسوب بين كل الطلاب في كل الفصول، حتى لو الجدول مفلتر)
+  const rankedGlobal = [...(allStudents || [])].sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
+  const globalRankMap = {};
+  rankedGlobal.forEach((s, i) => { globalRankMap[s.id] = i + 1; });
 
   if (!students || students.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="muted">مفيش طلاب مسجلين لسه</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="muted">مفيش طلاب في الفلتر ده لسه</td></tr>';
     return;
   }
 
-  tbody.innerHTML = students.map((s, i) => {
-    const totalLessons = lessonCountByClass[s.class_id] || 0;
-    const completed = completedByStudent[s.id] || 0;
-    const notCompleted = Math.max(0, totalLessons - completed);
-    return `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${s.full_name || "—"}</td>
-        <td>${s.classes?.name || "—"}</td>
-        <td class="code">${s.access_code}</td>
-        <td>${s.total_points || 0}</td>
-        <td>#${rankMap[s.id]}</td>
-        <td>${completed}</td>
-        <td>${notCompleted}</td>
-      </tr>`;
-  }).join("");
+  // جمّع الطلاب حسب الفصل، وجوه كل فصل رتّبهم من الأعلى نقاط للأقل (ترتيب المراكز)
+  const byClass = {};
+  students.forEach(s => {
+    const key = s.classes?.name || "بدون فصل";
+    (byClass[key] = byClass[key] || []).push(s);
+  });
+  const classNames = Object.keys(byClass).sort((a, b) => a.localeCompare(b, "ar"));
+
+  let rowsHtml = "";
+  let serial = 0;
+  classNames.forEach(className => {
+    const classStudents = byClass[className].sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
+    rowsHtml += `<tr><td colspan="9" style="background:rgba(242,184,75,0.08); color:var(--gold); font-weight:700;">📚 ${className} (${classStudents.length} طالب)</td></tr>`;
+
+    classStudents.forEach((s, idxInClass) => {
+      serial += 1;
+      const totalLessons = lessonCountByClass[s.class_id] || 0;
+      const completed = completedByStudent[s.id] || 0;
+      const notCompleted = Math.max(0, totalLessons - completed);
+      const medal = idxInClass === 0 ? " 🥇" : idxInClass === 1 ? " 🥈" : idxInClass === 2 ? " 🥉" : "";
+      rowsHtml += `
+        <tr>
+          <td>${serial}</td>
+          <td>${s.full_name || "—"}</td>
+          <td>${className}</td>
+          <td class="code">${s.access_code}</td>
+          <td>${s.total_points || 0}</td>
+          <td>#${idxInClass + 1}${medal}</td>
+          <td>#${globalRankMap[s.id]}</td>
+          <td>${completed}</td>
+          <td>${notCompleted}</td>
+        </tr>`;
+    });
+  });
+
+  tbody.innerHTML = rowsHtml;
 }
 
 async function loadSettings() {
@@ -354,6 +384,7 @@ async function loadClasses() {
   const opts = classes.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
   document.getElementById("studentClass").innerHTML = opts;
   document.getElementById("courseClass").innerHTML = opts;
+  document.getElementById("reportClassFilter").innerHTML = '<option value="all">كل الفصول (مجمّعة)</option>' + opts;
 
   const base = window.location.origin + window.location.pathname.replace("admin.html", "");
   document.getElementById("generalRegLink").value = base + "register.html";
