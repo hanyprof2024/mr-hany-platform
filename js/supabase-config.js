@@ -1,8 +1,9 @@
 // ============================================================
-// حط بيانات مشروع Supabase بتاعك هنا (Project Settings > API)
+// بيانات مشروع Supabase بتاعك (مفتاح anon عام بطبيعته ومش سري)
+// ملاحظة: الملف ده جاهز بمفاتيحك، فمتغيّرش فيه حاجة
 // ============================================================
-const SUPABASE_URL = "PUT_YOUR_SUPABASE_URL_HERE";       // مثال: https://xxxxx.supabase.co
-const SUPABASE_ANON_KEY = "PUT_YOUR_SUPABASE_ANON_KEY_HERE";
+const SUPABASE_URL = "https://kiwtoolwyanqrxpkwxhs.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpd3Rvb2x3eWFucXJ4cGt3eGhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxOTcwMjUsImV4cCI6MjEwNTc3MzAyNX0.8HJ-n-7Zyf_Kns3nDYu9taaRY_nBZCd1ho1O5scWqTE";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
