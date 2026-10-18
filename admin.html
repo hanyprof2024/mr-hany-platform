@@ -26,6 +26,14 @@
   .stats-box { display:none; margin-top:12px; padding:12px; border-radius:10px; background:rgba(255,255,255,0.04); }
   .stats-summary { display:flex; gap:18px; margin-bottom:10px; font-size:13px; }
   .student-ans-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.06); }
+  .level-row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+  .level-row input { margin-bottom:0; }
+  .level-row .lv-num { width:26px; text-align:center; color:var(--text-1); font-weight:700; }
+  .level-row .lv-emoji { width:58px; text-align:center; }
+  .level-row .lv-name { flex:1; min-width:0; }
+  .level-row .lv-pts { width:92px; }
+  .lv-gap { font-size:11px; color:var(--text-1); margin:-4px 34px 10px 0; }
+  .lv-gap.bad { color:var(--coral); }
   .table-wrap { overflow-x:auto; }
   table.report { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
   table.report th { text-align:right; padding:8px 10px; color:var(--text-1); font-weight:700; border-bottom:1px solid var(--glass-border); }
@@ -63,6 +71,7 @@
       <div class="tab" data-tab="courses">الكورسات</div>
       <div class="tab" data-tab="lessons">الدروس</div>
       <div class="tab" data-tab="questions">الأسئلة</div>
+      <div class="tab" data-tab="levels">المستويات</div>
       <div class="tab" data-tab="settings">الإعدادات</div>
     </div>
 
@@ -172,24 +181,55 @@
       <div class="glass card"><div id="questionList"></div></div>
     </div>
 
+    <!-- المستويات -->
+    <div class="section" id="sec-levels">
+      <div class="glass card">
+        <h2>🎮 مستويات الطلاب</h2>
+        <p class="muted" style="margin-bottom:12px;">حدد عدد النقاط اللازمة للوصول لكل مستوى. الطالب بيترقّى تلقائي أول ما رصيده يوصل للرقم. أول مستوى لازم يبدأ من 0، وكل مستوى لازم نقاطه أكبر من اللي قبله.</p>
+        <div id="levelsEditor"></div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn btn-ghost" id="addLevelBtn">➕ إضافة مستوى</button>
+          <button class="btn btn-primary" id="saveLevelsBtn" style="flex:1;">حفظ المستويات</button>
+        </div>
+        <p id="levelsMsg" class="muted" style="display:none; margin-top:8px;"></p>
+      </div>
+    </div>
+
     <!-- الإعدادات -->
     <div class="section" id="sec-settings">
       <div class="glass card">
-        <h2>🎁 نقاط مشاهدة الفيديو</h2>
-        <p class="muted">الطالب يقدر يتفرج على نفس الفيديو أكتر من مرة، وكل مشاهدة كاملة (100%) بتدّيله نقط — بحد أقصى يومي عشان النظام يفضل طبيعي.</p>
+        <h2>🎁 نقاط مشاهدة الفيديو (مستويات)</h2>
+        <p class="muted">الطالب يقدر يتفرج على نفس الفيديو أكتر من مرة، وكل نقطة محسوبة ومتأكد منها من السيرفر نفسه (مش من المتصفح) — مينفعش حد يتلاعب فيها.</p>
 
-        <label style="margin-top:12px;">نقط أول مشاهدة كاملة</label>
+        <label style="margin-top:12px;">نقط أول مشاهدة كاملة (المرة 1)</label>
         <input id="watchBonusInput" type="number">
-
-        <label>نقط كل مشاهدة إضافية لنفس الفيديو</label>
-        <input id="repeatWatchInput" type="number">
-
-        <label>أقصى عدد مشاهدات محتسبة نقط في اليوم لنفس الفيديو</label>
+        <label>نقط المرة التانية</label>
+        <input id="tier2Input" type="number">
+        <label>نقط المرة التالتة</label>
+        <input id="tier3Input" type="number">
+        <label>نقط المرة الرابعة</label>
+        <input id="tier4Input" type="number">
+        <label>نقط المرة الخامسة وأي مرة بعدها (لحد الحد اليومي)</label>
+        <input id="tier5Input" type="number">
+        <label>أقصى عدد مشاهدات محتسبة نقط في اليوم لنفس الفيديو (كل 24 ساعة)</label>
         <input id="dailyCapInput" type="number">
 
         <button class="btn btn-primary" id="saveSettingsBtn">حفظ</button>
         <p id="settingsMsg" class="muted" style="display:none; margin-top:8px;"></p>
       </div>
+
+      <div class="glass card">
+        <h2>🎁 نقاط التفاعل</h2>
+        <label>نقط اللايك + الكومنت (لكل فيديو)</label>
+        <input id="likeBonusInput" type="number">
+        <label>نقط المشاركة مع الأصحاب (لكل فيديو)</label>
+        <input id="shareBonusInput" type="number">
+        <label>نقط الاشتراك + تفعيل الجرس (مرة واحدة بس لكل طالب في كل المنصة)</label>
+        <input id="subBonusInput" type="number">
+        <button class="btn btn-primary" id="saveInteractionSettingsBtn">حفظ</button>
+        <p id="interactionSettingsMsg" class="muted" style="display:none; margin-top:8px;"></p>
+      </div>
+
       <div class="glass card">
         <h2>💡 نصيحة</h2>
         <p class="muted">سيبت الحد اليومي شغال عشان ساعات المشاهدة تزيد بشكل طبيعي وموزّع على كذا يوم بدل ما تتركز كلها في يوم واحد من نفس الطلاب — ده بيفيدك أكتر في معدل نمو القناة، وبيقلل احتمال إن يوتيوب يعتبر التكرار نمط غير طبيعي.</p>
@@ -257,8 +297,117 @@ async function loadAll() {
   await loadStudents();
   await loadQuestions();
   await loadSettings();
+  await loadLevelsAdmin();
   await loadStudentReport();
 }
+
+// ---- إدارة المستويات ----
+let levelsDraft = [];
+let originalLevelIds = [];
+
+function escAttr(v) {
+  return String(v ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function loadLevelsAdmin() {
+  const { data, error } = await supabaseClient.from("levels").select("*").order("min_points");
+  if (error) { showToast("❌ فشل تحميل المستويات: " + error.message); console.error(error); return; }
+  levelsDraft = (data || []).map(l => ({ id: l.id, name: l.name, emoji: l.emoji || "⭐", min_points: l.min_points }));
+  originalLevelIds = levelsDraft.map(l => l.id);
+  renderLevelsEditor();
+}
+
+function renderLevelsEditor() {
+  const box = document.getElementById("levelsEditor");
+  if (levelsDraft.length === 0) {
+    box.innerHTML = '<p class="muted">مفيش مستويات. دوس "إضافة مستوى" أو شغّل جزء المستويات من schema.sql لو لسه ماشغّلتوش.</p>';
+    return;
+  }
+  box.innerHTML = levelsDraft.map((l, i) => {
+    const prev = levelsDraft[i - 1];
+    let gapHtml = "";
+    if (prev) {
+      const gap = (parseInt(l.min_points) || 0) - (parseInt(prev.min_points) || 0);
+      gapHtml = gap > 0
+        ? `<div class="lv-gap">+${gap} نقطة عن المستوى اللي قبله</div>`
+        : `<div class="lv-gap bad">⚠️ لازم تكون أكبر من نقاط المستوى اللي قبله</div>`;
+    }
+    return `
+      <div class="level-row">
+        <span class="lv-num">${i + 1}</span>
+        <input class="lv-emoji" value="${escAttr(l.emoji)}" maxlength="4" oninput="levelsDraft[${i}].emoji = this.value">
+        <input class="lv-name" value="${escAttr(l.name)}" placeholder="اسم المستوى" oninput="levelsDraft[${i}].name = this.value">
+        <input class="lv-pts" type="number" min="0" value="${escAttr(l.min_points)}" ${i === 0 ? "" : ""}
+               onchange="levelsDraft[${i}].min_points = parseInt(this.value) || 0; renderLevelsEditor();">
+        <span class="del" onclick="removeLevel(${i})">حذف</span>
+      </div>${gapHtml}`;
+  }).join("");
+}
+
+function removeLevel(i) {
+  if (levelsDraft.length <= 1) { showLevelsMsg("لازم يفضل مستوى واحد على الأقل", true); return; }
+  levelsDraft.splice(i, 1);
+  renderLevelsEditor();
+}
+
+document.getElementById("addLevelBtn").addEventListener("click", () => {
+  const last = levelsDraft[levelsDraft.length - 1];
+  levelsDraft.push({ id: null, name: "مستوى جديد", emoji: "⭐", min_points: last ? (parseInt(last.min_points) || 0) + 100 : 0 });
+  renderLevelsEditor();
+});
+
+function showLevelsMsg(text, isError) {
+  const m = document.getElementById("levelsMsg");
+  m.textContent = text;
+  m.style.color = isError ? "var(--coral)" : "var(--teal)";
+  m.style.display = "block";
+  if (!isError) setTimeout(() => m.style.display = "none", 2500);
+}
+
+document.getElementById("saveLevelsBtn").addEventListener("click", async () => {
+  // فحص البيانات قبل الحفظ
+  for (let i = 0; i < levelsDraft.length; i++) {
+    const l = levelsDraft[i];
+    if (!String(l.name).trim()) { showLevelsMsg(`المستوى ${i + 1}: اكتب اسم`, true); return; }
+    if (!Number.isInteger(parseInt(l.min_points)) || parseInt(l.min_points) < 0) { showLevelsMsg(`المستوى ${i + 1}: النقاط لازم تكون رقم صحيح`, true); return; }
+  }
+  if (parseInt(levelsDraft[0].min_points) !== 0) { showLevelsMsg("أول مستوى لازم يبدأ من 0 نقطة", true); return; }
+  for (let i = 1; i < levelsDraft.length; i++) {
+    if (parseInt(levelsDraft[i].min_points) <= parseInt(levelsDraft[i - 1].min_points)) {
+      showLevelsMsg(`المستوى ${i + 1}: نقاطه لازم تكون أكبر من المستوى اللي قبله`, true); return;
+    }
+  }
+
+  const btn = document.getElementById("saveLevelsBtn");
+  btn.disabled = true;
+
+  try {
+    const keptIds = levelsDraft.filter(l => l.id).map(l => l.id);
+    const removed = originalLevelIds.filter(id => !keptIds.includes(id));
+
+    if (removed.length) {
+      const { error } = await supabaseClient.from("levels").delete().in("id", removed);
+      if (error) throw error;
+    }
+    for (const l of levelsDraft.filter(l => l.id)) {
+      const { error } = await supabaseClient.from("levels")
+        .update({ name: l.name.trim(), emoji: l.emoji || "⭐", min_points: parseInt(l.min_points) }).eq("id", l.id);
+      if (error) throw error;
+    }
+    const fresh = levelsDraft.filter(l => !l.id).map(l => ({ name: l.name.trim(), emoji: l.emoji || "⭐", min_points: parseInt(l.min_points) }));
+    if (fresh.length) {
+      const { error } = await supabaseClient.from("levels").insert(fresh);
+      if (error) throw error;
+    }
+    showLevelsMsg("تم حفظ المستويات ✓", false);
+    await loadLevelsAdmin();
+  } catch (err) {
+    showLevelsMsg("❌ فشل الحفظ: " + err.message, true);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById("refreshReportBtn").addEventListener("click", loadStudentReport);
 document.getElementById("reportClassFilter").addEventListener("change", loadStudentReport);
@@ -349,26 +498,52 @@ async function loadStudentReport() {
 }
 
 async function loadSettings() {
-  const { data } = await supabaseClient
-    .from("app_settings").select("watch_bonus_points, repeat_watch_points, daily_watch_cap").eq("id", 1).maybeSingle();
-  document.getElementById("watchBonusInput").value = data ? data.watch_bonus_points : 20;
-  document.getElementById("repeatWatchInput").value = data ? data.repeat_watch_points : 5;
-  document.getElementById("dailyCapInput").value = data ? data.daily_watch_cap : 3;
+  const { data } = await supabaseClient.from("app_settings").select("*").eq("id", 1).maybeSingle();
+  const d = data || {};
+  document.getElementById("watchBonusInput").value = d.watch_bonus_points ?? 20;
+  document.getElementById("tier2Input").value = d.tier2_points ?? 5;
+  document.getElementById("tier3Input").value = d.tier3_points ?? 3;
+  document.getElementById("tier4Input").value = d.tier4_points ?? 2;
+  document.getElementById("tier5Input").value = d.tier5plus_points ?? 1;
+  document.getElementById("dailyCapInput").value = d.daily_watch_cap ?? 5;
+  document.getElementById("likeBonusInput").value = d.like_bonus_points ?? 15;
+  document.getElementById("shareBonusInput").value = d.share_bonus_points ?? 10;
+  document.getElementById("subBonusInput").value = d.subscribe_bonus_points ?? 10;
 }
 
 document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
-  const watchBonus = parseInt(document.getElementById("watchBonusInput").value);
-  const repeatPoints = parseInt(document.getElementById("repeatWatchInput").value);
-  const dailyCap = parseInt(document.getElementById("dailyCapInput").value);
+  const vals = {
+    watch_bonus_points: parseInt(document.getElementById("watchBonusInput").value),
+    tier2_points: parseInt(document.getElementById("tier2Input").value),
+    tier3_points: parseInt(document.getElementById("tier3Input").value),
+    tier4_points: parseInt(document.getElementById("tier4Input").value),
+    tier5plus_points: parseInt(document.getElementById("tier5Input").value),
+    daily_watch_cap: parseInt(document.getElementById("dailyCapInput").value),
+  };
   const msg = document.getElementById("settingsMsg");
-  if ([watchBonus, repeatPoints, dailyCap].some(v => isNaN(v) || v < 0)) {
+  if (Object.values(vals).some(v => isNaN(v) || v < 0)) {
     msg.textContent = "اكتب أرقام صحيحة في كل الحقول"; msg.style.color = "var(--coral)"; msg.style.display = "block";
     return;
   }
-  await supabaseClient.from("app_settings").update({
-    watch_bonus_points: watchBonus, repeat_watch_points: repeatPoints,
-    daily_watch_cap: dailyCap, updated_at: new Date().toISOString()
-  }).eq("id", 1);
+  const { error } = await supabaseClient.from("app_settings").update({ ...vals, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) { msg.textContent = "❌ " + error.message; msg.style.color = "var(--coral)"; msg.style.display = "block"; return; }
+  msg.textContent = "تم الحفظ ✓"; msg.style.color = "var(--teal)"; msg.style.display = "block";
+  setTimeout(() => msg.style.display = "none", 2000);
+});
+
+document.getElementById("saveInteractionSettingsBtn").addEventListener("click", async () => {
+  const vals = {
+    like_bonus_points: parseInt(document.getElementById("likeBonusInput").value),
+    share_bonus_points: parseInt(document.getElementById("shareBonusInput").value),
+    subscribe_bonus_points: parseInt(document.getElementById("subBonusInput").value),
+  };
+  const msg = document.getElementById("interactionSettingsMsg");
+  if (Object.values(vals).some(v => isNaN(v) || v < 0)) {
+    msg.textContent = "اكتب أرقام صحيحة في كل الحقول"; msg.style.color = "var(--coral)"; msg.style.display = "block";
+    return;
+  }
+  const { error } = await supabaseClient.from("app_settings").update({ ...vals, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) { msg.textContent = "❌ " + error.message; msg.style.color = "var(--coral)"; msg.style.display = "block"; return; }
   msg.textContent = "تم الحفظ ✓"; msg.style.color = "var(--teal)"; msg.style.display = "block";
   setTimeout(() => msg.style.display = "none", 2000);
 });

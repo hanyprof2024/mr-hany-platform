@@ -27,6 +27,7 @@
 const student = requireSession();
 
 async function loadBoard() {
+  await loadLevels();
   const { data } = await supabaseClient
     .from("students")
     .select("full_name, total_points")
@@ -43,10 +44,14 @@ async function loadBoard() {
   board.innerHTML = data.map((s, i) => {
     const rankClass = i === 0 ? "top1" : i === 1 ? "top2" : i === 2 ? "top3" : "";
     const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1);
+    const lvl = getLevelInfo(s.total_points || 0);
     return `
       <div class="leader-row">
         <div class="rank ${rankClass}">${medal}</div>
-        <div style="flex:1;">${s.full_name}</div>
+        <div style="flex:1;">
+          <div>${s.full_name}</div>
+          <div class="muted" style="font-size:11px;">${lvl.emoji} ${lvl.name}</div>
+        </div>
         <div style="font-weight:900; color:var(--gold);">${s.total_points || 0}</div>
       </div>`;
   }).join("");

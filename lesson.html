@@ -80,6 +80,14 @@
       <button class="btn btn-primary" id="claimLikeBonus" style="margin-top:10px;" disabled>استلم +15 نقطة</button>
     </div>
 
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border);">
+      <label>
+        <input type="checkbox" id="shareCheck" style="width:auto; display:inline-block; margin-inline-end:8px;">
+        شاركت الفيديو ده مع أصحابي 📤
+      </label>
+      <button class="btn btn-primary" id="claimShareBonus" style="margin-top:10px;" disabled>استلم +10 نقطة</button>
+    </div>
+
     <div id="subBonusBlock" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--glass-border); display:none;">
       <label>
         <input type="checkbox" id="subCheck" style="width:auto; display:inline-block; margin-inline-end:8px;">
@@ -104,10 +112,10 @@ const lessonId = params.get("id");
 
 let player, lesson, questions = [], answeredIds = new Set(), pendingQuestion = null;
 let maxWatchedSecond = 0, videoDuration = 0, isSeeking = false, completingLock = false;
-let watchBonusPoints = 20, repeatWatchPoints = 5, dailyWatchCap = 3;
-let watchCount = 0, watchesToday = 0, lastWatchDate = null;
+let watchCount = 0; // لعرض "اتفرجت X مرة" بس — كل القرار الحقيقي بيتاخد في السيرفر
 
 async function init() {
+  await loadLevels();
   const { data: lessonData } = await supabaseClient
     .from("lessons").select("*").eq("id", lessonId).maybeSingle();
 
@@ -120,8 +128,11 @@ async function init() {
     document.getElementById("readingLink").href = lesson.reading_url;
   }
 
+  // من غير correct_index عمدًا — الإجابة الصح بتتحقق جوه قاعدة البيانات
+  // مش في المتصفح، عشان محدش يقدر يقرأها من كود الصفحة ويغش
   const { data: qData } = await supabaseClient
-    .from("questions").select("*").eq("lesson_id", lessonId).order("trigger_second");
+    .from("questions").select("id, lesson_id, trigger_second, prompt, choices, points, sort_order")
+    .eq("lesson_id", lessonId).order("trigger_second");
   questions = qData || [];
 
   const { data: attempts } = await supabaseClient
@@ -136,14 +147,6 @@ async function init() {
     document.getElementById("subBonusBlock").style.display = "block";
   }
 
-  const { data: settings } = await supabaseClient
-    .from("app_settings").select("watch_bonus_points, repeat_watch_points, daily_watch_cap").eq("id", 1).maybeSingle();
-  if (settings) {
-    watchBonusPoints = settings.watch_bonus_points;
-    repeatWatchPoints = settings.repeat_watch_points;
-    dailyWatchCap = settings.daily_watch_cap;
-  }
-
   await loadProgress();
   loadYTPlayer();
 }
@@ -155,17 +158,10 @@ async function loadProgress() {
 
   if (!prog) return;
 
-  // ملحوظة: مش بنسترجع max_watched_second كنقطة بداية للجلسة عمدًا — كل جلسة مشاهدة
-  // جديدة لازم تتفرج من الأول لحد الآخر عشان تحتسب كمشاهدة كاملة تانية (ساعات مشاهدة حقيقية).
   watchCount = prog.watch_count || 0;
-  watchesToday = prog.watches_today || 0;
-  lastWatchDate = prog.last_watch_date || null;
-
-  const today = new Date().toISOString().slice(0, 10);
-  if (lastWatchDate !== today) watchesToday = 0;
-
   if (prog.completed) updateWatchStatusUI();
   if (prog.like_bonus_awarded) markClaimed("claimLikeBonus", "likeCheck");
+  if (prog.share_bonus_awarded) markClaimed("claimShareBonus", "shareCheck");
 }
 
 function updateWatchStatusUI() {
@@ -249,34 +245,26 @@ async function onVideoFullyWatched() {
   completingLock = true;
   player.pauseVideo();
 
-  const wasFirstWatchEver = watchCount === 0;
-  watchCount += 1;
+  // القرار كله بيتاخد في قاعدة البيانات: السيرفر بيحسب التاريخ، عدد المرات،
+  // ومستوى النقطة المناسب — مش المتصفح، فمفيش طريقة للتلاعب فيه
+  const { data, error } = await supabaseClient.rpc("claim_watch_completion", {
+    p_student_id: student.id, p_lesson_id: lessonId
+  });
 
-  const today = new Date().toISOString().slice(0, 10);
-  if (lastWatchDate !== today) { watchesToday = 0; lastWatchDate = today; }
-
-  let pointsAwarded = 0;
-  let capped = false;
-  if (watchesToday < dailyWatchCap) {
-    pointsAwarded = wasFirstWatchEver ? watchBonusPoints : repeatWatchPoints;
-    watchesToday += 1;
-  } else {
-    capped = true;
+  if (error) {
+    showToast("❌ حصل خطأ: " + error.message);
+    completingLock = false;
+    return;
   }
 
-  await supabaseClient.from("lesson_progress").upsert({
-    student_id: student.id, lesson_id: lessonId,
-    completed: true, watch_count: watchCount,
-    watches_today: watchesToday, last_watch_date: lastWatchDate
-  }, { onConflict: "student_id,lesson_id" });
-
+  watchCount = data.watch_count;
   updateWatchStatusUI();
 
-  if (pointsAwarded > 0) {
-    await addPoints(pointsAwarded);
-    showToast(`🎉 مشاهدة كاملة (${watchesToday}/${dailyWatchCap} النهاردة)! +${pointsAwarded} نقطة`);
-  } else if (capped) {
-    showToast("💪 برافو عليك! وصلت للحد الأقصى من نقاط إعادة المشاهدة النهاردة");
+  if (data.points_awarded > 0) {
+    applyNewTotal(data.new_total_points);
+    showToast(`🎉 مشاهدة كاملة (${data.watches_today}/${data.daily_cap} النهاردة)! +${data.points_awarded} نقطة`);
+  } else if (data.capped) {
+    showToast("💪 برافو عليك! خلصت الحد الأقصى من مشاهدات اليوم، كمّل بكرة وهتاخد نقط جديدة 🌙");
   }
 
   // اسمح بإعادة المشاهدة فورًا من الأول (وتحتسب نقط جديدة لو فاضل من الكوتا اليومية)
@@ -335,17 +323,22 @@ function showQuestion(q) {
 }
 
 async function submitAnswer(q, idx, btnEl) {
-  const isCorrect = idx === q.correct_index;
   const allButtons = document.querySelectorAll("#qChoices .choice");
   allButtons.forEach(b => b.onclick = null);
-  btnEl.classList.add(isCorrect ? "correct" : "wrong");
-  if (!isCorrect) allButtons[q.correct_index].classList.add("correct");
 
-  await supabaseClient.from("attempts").insert({
-    student_id: student.id, question_id: q.id, chosen_index: idx, is_correct: isCorrect
+  const { data, error } = await supabaseClient.rpc("claim_question_points", {
+    p_student_id: student.id, p_question_id: q.id, p_chosen_index: idx
   });
 
-  if (isCorrect) await addPoints(q.points);
+  if (error) {
+    showToast("❌ حصل خطأ: " + error.message);
+    return;
+  }
+
+  btnEl.classList.add(data.is_correct ? "correct" : "wrong");
+  if (!data.is_correct) allButtons[data.correct_index].classList.add("correct");
+
+  if (data.points_awarded > 0) applyNewTotal(data.new_total_points, data.points_awarded);
   answeredIds.add(q.id);
 
   setTimeout(() => {
@@ -355,13 +348,21 @@ async function submitAnswer(q, idx, btnEl) {
   }, 1400);
 }
 
-async function addPoints(amount) {
-  const newTotal = (student.total_points || 0) + amount;
+// بياخد الرصيد النهائي من رد السيرفر مباشرة (مش بيحسبه في المتصفح) — ده
+// اللي بيقفل ثغرة التلاعب: حتى لو حد غيّر الكود، السيرفر مش هيصدّقه
+function applyNewTotal(newTotal, delta) {
+  const oldLevel = getLevelInfo(student.total_points || 0);
   student.total_points = newTotal;
   saveSession(student);
-  document.getElementById("pointsVal") && (document.getElementById("pointsVal").textContent = newTotal);
-  await supabaseClient.from("students").update({ total_points: newTotal }).eq("id", student.id);
-  showToast(`🎉 +${amount} نقطة!`);
+  const el = document.getElementById("pointsVal");
+  if (el) el.textContent = newTotal;
+  if (delta) showToast(`🎉 +${delta} نقطة!`);
+
+  // رسالة ترقية لما الطالب يعدّي عتبة المستوى اللي بعده
+  const newLevel = getLevelInfo(newTotal);
+  if (newLevel.levelNumber > oldLevel.levelNumber) {
+    setTimeout(() => showToast(`🆙 مبروك! دخلت المستوى ${newLevel.levelNumber}: ${newLevel.emoji} ${newLevel.name}`), 2200);
+  }
 }
 
 function showToast(msg) {
@@ -374,25 +375,38 @@ function showToast(msg) {
 document.getElementById("likeCheck").addEventListener("change", (e) => {
   document.getElementById("claimLikeBonus").disabled = !e.target.checked;
 });
+document.getElementById("shareCheck").addEventListener("change", (e) => {
+  document.getElementById("claimShareBonus").disabled = !e.target.checked;
+});
 document.getElementById("subCheck").addEventListener("change", (e) => {
   document.getElementById("claimSubBonus").disabled = !e.target.checked;
 });
 
 document.getElementById("claimLikeBonus").addEventListener("click", async () => {
+  const { data, error } = await supabaseClient.rpc("claim_like_bonus", {
+    p_student_id: student.id, p_lesson_id: lessonId
+  });
+  if (error) { showToast("❌ حصل خطأ: " + error.message); return; }
   markClaimed("claimLikeBonus", "likeCheck");
-  await supabaseClient.from("lesson_progress").upsert({
-    student_id: student.id, lesson_id: lessonId, liked_commented: true, like_bonus_awarded: true
-  }, { onConflict: "student_id,lesson_id" });
-  await addPoints(15);
+  if (data.awarded) applyNewTotal(data.new_total_points, data.points_awarded);
+});
+
+document.getElementById("claimShareBonus").addEventListener("click", async () => {
+  const { data, error } = await supabaseClient.rpc("claim_share_bonus", {
+    p_student_id: student.id, p_lesson_id: lessonId
+  });
+  if (error) { showToast("❌ حصل خطأ: " + error.message); return; }
+  markClaimed("claimShareBonus", "shareCheck");
+  if (data.awarded) applyNewTotal(data.new_total_points, data.points_awarded);
 });
 
 document.getElementById("claimSubBonus").addEventListener("click", async () => {
+  const { data, error } = await supabaseClient.rpc("claim_subscribe_bonus", {
+    p_student_id: student.id
+  });
+  if (error) { showToast("❌ حصل خطأ: " + error.message); return; }
   markClaimed("claimSubBonus", "subCheck");
-  await supabaseClient.from("lesson_progress").upsert({
-    student_id: student.id, lesson_id: lessonId, subscribed_bell: true, subscribe_bonus_awarded: true
-  }, { onConflict: "student_id,lesson_id" });
-  await supabaseClient.from("students").update({ subscribed_bonus_claimed: true }).eq("id", student.id);
-  await addPoints(10);
+  if (data.awarded) applyNewTotal(data.new_total_points, data.points_awarded);
   setTimeout(() => { document.getElementById("subBonusBlock").style.display = "none"; }, 1200);
 });
 
